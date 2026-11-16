@@ -53,6 +53,8 @@ published, so treat dollar figures as relative sizes. Re-check anything marked *
   early stopping (more output tokens); high for strict instruction following [14]. Keep its context under 100k.
 - **Sonnet:** diagnosis, design, ambiguous briefs, multi-step changes where a check can fail for a non-obvious
   reason [12]. Neither judges visual output [ours].
+- **Opus:** creative clusters (prose, copy, naming, content) where the writing itself is the deliverable; 2× Sonnet
+  per token, so only with the user's once-per-session OK (SKILL.md §1).
 
 ## 4. Keeping the orchestrator cheap
 

@@ -1,7 +1,7 @@
 {
   "name": "delegate",
-  "version": "0.7.0",
-  "description": "Claude Code plans and checks; a worker does the work in place: a Claude Code subagent (Haiku or Sonnet) or the Antigravity CLI (agy). The server snapshots, guards and runs your checks, and returns one verdict. MCP server + /delegate skill.",
+  "version": "0.8.0",
+  "description": "Claude Code plans and checks; a worker does the work in place: a Claude Code subagent (Haiku, Sonnet or Opus) or the Antigravity CLI (agy). The server snapshots, guards and runs your checks, and returns one verdict. MCP server + /delegate skill.",
   "author": {
     "name": "Pranav Raut"
   },

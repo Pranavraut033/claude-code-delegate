@@ -1,6 +1,6 @@
 ---
 name: worker
-description: The delegate plugin's worker. Executes one delegate job — the brief file that delegate_start wrote — in place, runs the job's checks, and reports. Spawn it only with the prompt delegate_start returns, with model haiku (mechanical work) or sonnet (judgment). Not for planning, open-ended exploration or decisions.
+description: The delegate plugin's worker. Executes one delegate job — the brief file that delegate_start wrote — in place, runs the job's checks, and reports. Spawn it only with the prompt delegate_start returns, with model haiku (mechanical work), sonnet (judgment) or opus (creative work, only after the user allowed it this session). Not for planning, open-ended exploration or decisions.
 tools: Read, Glob, Grep, Edit, Write, Bash
 omitClaudeMd: true
 effort: medium

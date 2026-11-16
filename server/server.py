@@ -537,7 +537,7 @@ from mcp.server.mcpserver import MCPServer  # noqa: E402  (selftest runs without
 mcp = MCPServer("delegate", instructions=(
     "Hand a planned work package to a worker and check it with one verdict. delegate_start snapshots the tree "
     "and writes the guarded brief; backend='subagent' (default) returns `agent` fields for the Agent tool "
-    "(a delegate:worker subagent on haiku or sonnet), backend='agy' launches the Antigravity CLI. When the "
+    "(a delegate:worker subagent on haiku, sonnet or opus), backend='agy' launches the Antigravity CLI. When the "
     "worker finishes, delegate_verdict runs your checks and reports scope, denials, unattributed and protected "
     "changes, a sample diff and `clean`. delegate_diff/delegate_discard audit or revert; delegate_resume opens a "
     "fix-up round. Nothing is committed."))
@@ -552,7 +552,7 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
     """Start a worker on a work package (several related tasks), in place in `cwd` (absolute path).
     backend="subagent" (default): a Claude Code subagent does the work. Nothing is launched here: the job is
     snapshotted, the guarded brief is written to a file, and you get `agent` — pass its fields to the Agent tool
-    (subagent_type, model "haiku"|"sonnet", prompt, run_in_background) — then call delegate_verdict(job) when
+    (subagent_type, model "haiku"|"sonnet"|"opus", prompt, run_in_background) — then call delegate_verdict(job) when
     the worker's completion notice arrives. The worker runs under the session's own permissions. `commands`:
     the exact command lines the brief needs (the checks are added); `protect`: files the checks depend on, which
     the worker is told not to edit and whose hashes go in the verdict (`protected_changed`). backend="agy": the
@@ -578,6 +578,8 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
     if backend not in ("subagent", "agy"):
         return {"error": f"backend must be 'subagent' or 'agy', not {backend!r}"}
     model = model or (DEFAULT_MODEL if backend == "agy" else "haiku")
+    if backend == "subagent" and model not in ("haiku", "sonnet", "opus"):
+        return {"error": f"subagent model must be 'haiku', 'sonnet' or 'opus', not {model!r}"}
     if not os.path.isdir(cwd):
         return {"error": f"cwd {cwd} is not a directory"}
     if not allowed_files:
@@ -1247,6 +1249,7 @@ def _selftest_subagent():
             job = out["job"]
             assert out["agent"]["subagent_type"] == "delegate:worker" and out["agent"]["model"] == "haiku", out
             assert f"Job {job}." in out["agent"]["prompt"]
+            assert "error" in delegate_start("x", str(repo), ["a.py"], model="gpt", lend=[])
             brief = (JOBS / job / "brief.md").read_text()
             cd = f"cd {shlex.quote(_load(job)['cwd'])} && "
             assert f"`{cd}python3 a.py`; `{cd}true`" in brief and "test_a.py" in brief and "allow-list ends" not in brief

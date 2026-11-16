@@ -4,9 +4,9 @@
 
 **Claude plans. A cheaper worker builds. You watch; Claude checks one verdict.**
 
-A Claude Code plugin that cuts a job into clusters and hands each one to the cheapest worker that will finish it — a Claude Code subagent on **Haiku** or **Sonnet**, or the **Antigravity CLI** (`agy`, Gemini) — then checks every change with a snapshot, a guard and your own machine checks.
+A Claude Code plugin that cuts a job into clusters and hands each one to the cheapest worker that will finish it — a Claude Code subagent on **Haiku**, **Sonnet** or **Opus** (creative work, asked once per session), or the **Antigravity CLI** (`agy`, Gemini) — then checks every change with a snapshot, a guard and your own machine checks.
 
-![version](https://img.shields.io/badge/version-0.7.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
+![version](https://img.shields.io/badge/version-0.8.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_Opus_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
 
 **📖 New here? Read [the journey](JOURNEY.md)** — why we built this, what broke, and what the benchmarks really showed.
 
@@ -76,7 +76,7 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 
 | Tool | Description |
 |---|---|
-| `delegate_start` | Snapshot and start a job in place in cwd. `backend="subagent"` (default) writes the guarded brief and returns `agent` fields for the Agent tool (`delegate:worker`, `model="haiku"`/`"sonnet"`); `backend="agy"` launches agy. `checks=[…]` run after the worker; `commands=[…]` the exact command lines it may run; `protect=[…]` files the checks depend on; `outputs=[…]` files the commands generate; `lend=[…]` skills inlined into the brief. agy only: `mcp=[…]`, `handoff`, `network`, `timeout_s`. |
+| `delegate_start` | Snapshot and start a job in place in cwd. `backend="subagent"` (default) writes the guarded brief and returns `agent` fields for the Agent tool (`delegate:worker`, `model="haiku"`/`"sonnet"`/`"opus"`); `backend="agy"` launches agy. `checks=[…]` run after the worker; `commands=[…]` the exact command lines it may run; `protect=[…]` files the checks depend on; `outputs=[…]` files the commands generate; `lend=[…]` skills inlined into the brief. agy only: `mcp=[…]`, `handoff`, `network`, `timeout_s`. |
 | `delegate_verdict` | One verdict for a finished round: state, tokens (by model), orchestrator calls, report, edits, denied, out of scope, unattributed, protected changed, a diff sample, each check (run now), `clean`. |
 | `delegate_status` | One job's progress: state, steps, edits, commands, denials, the worker's final report. With no job, lists recent jobs. |
 | `delegate_wait` | Block until a job finishes or stalls; returns its status. |
@@ -96,12 +96,23 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 - **A declined `delegate_start` can still run.** Once, the desktop app sent the call before the user declined it. The skill tells Claude to check `delegate_status()` after a rejected or failed start.
 - **Snapshots and no commits**: a throwaway `GIT_INDEX_FILE`, `HEAD` and index untouched; workers commit nothing.
 
+## 🪤 Gotchas from real use
+
+- **Parallel jobs need the same `commands` list.** The guard config is shared, so the most recently started job's list wins and another job's commands get refused. Give every job the union of all commands and disjoint `allowed_files`, or start them one at a time. Each verdict then reports `clean: false` because sibling edits show up in `out_of_scope`; judge by `edits`, `protected_changed`, `unattributed` and the checks.
+- **`lend` can't resolve `anthropic-skills:` names.** Pass the `SKILL.md` path instead: `find ~/.claude/skills/synced -name SKILL.md`.
+- **agy's headless shell runs Node 16.** Anything needing Node 20+ must be granted and briefed with an explicit `env PATH=...` prefix.
+- **`gemini-4-argon-medium` can think for over 5 minutes, write nothing and be marked stalled.** Resume with "write files early, keep thinking short".
+- **agy retries denied commands, and every denial ends the round.** Grant the command, or forbid it by name in the brief.
+- **A big job can drain the Gemini pool mid-job** (about 70 h reset). Check `delegate_usage` first, and keep visual iteration in Claude.
+- **agy research invents citations.** In one run 18 of 70 URLs returned 404, and a fix-up round invented 3 more while reporting them "verified". A URL liveness check catches invented links but not wrong claims, so research output needs a claim-against-page check before use.
+
 ## 🧠 Choosing a worker
 
 | Worker | Use for | Cost |
 |---|---|---|
 | **Haiku** subagent (default) | One fixed, already-decided pattern across files; migrations, renames, extraction — with a machine check | $0.10/$0.50 per M tokens up to a 100k prompt; draws on your Claude plan |
 | **Sonnet** subagent | Diagnosis, ambiguity, multi-step changes; a cluster Haiku failed | $2/$10 per M |
+| **Opus** subagent | Creative clusters: prose, copy, naming, content. Claude asks you once per session before using it | $4/$20 per M |
 | **agy** (`gemini-3.8-flash-medium`) | Long unattended runs, or when Claude's limit is nearly spent (Google quota pool) | not cheaper in Claude tokens (benchmarks below) |
 | **Claude itself** | Anything under ~3 tool calls, or that would take more than ~5 orchestrator calls to brief and check; all visual judgment | — |
 

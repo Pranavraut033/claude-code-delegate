@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Plan a multi-file job on the strongest model, cut it into clusters of related tasks, and hand each cluster to the cheapest worker that will finish it — a Claude Code subagent on Haiku (mechanical) or Sonnet (judgment), or the Antigravity CLI (agy) — through the delegate MCP server, which snapshots the tree, guards the worker, runs your checks and returns one verdict. Use when the user says /delegate, "orchestrate this", "fan this out to subagents", "hand this to agy/Gemini", for multi-file builds or the same change across many files, long unattended runs (renders, build chains, test suites), reading volume too large for this session's context, or when Claude's usage limit is nearly spent. Not for work this session can finish in a few calls, and not for decisions — those stay here.
+description: Plan a multi-file job on the strongest model, cut it into clusters of related tasks, and hand each cluster to the cheapest worker that will finish it — a Claude Code subagent on Haiku (mechanical), Sonnet (judgment) or Opus (creative, with the user's OK), or the Antigravity CLI (agy) — through the delegate MCP server, which snapshots the tree, guards the worker, runs your checks and returns one verdict. Use when the user says /delegate, "orchestrate this", "fan this out to subagents", "hand this to agy/Gemini", for multi-file builds or the same change across many files, long unattended runs (renders, build chains, test suites), reading volume too large for this session's context, or when Claude's usage limit is nearly spent. Not for work this session can finish in a few calls, and not for decisions — those stay here.
 ---
 
 # /delegate — plan here, a cheap worker builds, one verdict comes back
@@ -22,7 +22,7 @@ our benchmarks and session logs (README, JOURNEY.md), [ext] = `references/orches
 | when | Claude 5-hour % | Claude weekly % |          ← ask the user before the first job and after the last
 
 ## Jobs                                                ← one row per job, delegated or done by you
-| # | job id | task | worker (haiku/sonnet/agy/self) | rounds | worker tokens | orchestrator_calls |
+| # | job id | task | worker (haiku/sonnet/opus/agy/self) | rounds | worker tokens | orchestrator_calls |
   denials | state | clean | protected_changed / unattributed | checked on disk | cascade (re-tags) | fixes, by whom |
 
 ## Friction                                            ← one line per problem
@@ -56,6 +56,12 @@ planning. Explore unfamiliar code with an Explore subagent, not by reading it al
 - **Tier each cluster now**, not at dispatch: `haiku` = apply a fixed, already-decided pattern, no design calls,
   no unfamiliar contracts; `sonnet` = diagnosis, ambiguity, multi-step changes where a check can fail for a
   non-obvious reason; unsure → `sonnet`. `agy` per `references/agy.md` (Google quota, long unattended runs).
+  `opus` = creative work where quality of voice and invention is the deliverable: prose, copy, naming
+  candidates, story/game/world content, original design writing. Not for code that Sonnet can do.
+- **Opus consent, once per session.** The first time a plan has an `opus` cluster, ask the user with
+  AskUserQuestion ("Use Opus workers for creative clusters this session?" — Yes / No, use Sonnet), before any
+  dispatch. Their answer stands for the rest of the session: never ask again, even for later jobs. On no,
+  re-tier those clusters to `sonnet`. Already running on Opus with one creative cluster → do it here instead.
 - Write the plan to `.claude/plans/<slug>.md`: per cluster the tier, files it owns, tasks, acceptance checks and
   dependencies. The plan becomes the briefs.
 - Before dispatch, run `git status` and tell the user which files with uncommitted work the workers will touch.
@@ -65,7 +71,7 @@ planning. Explore unfamiliar code with an Explore subagent, not by reading it al
 
 ## 2. Write the brief and the checks
 
-`delegate_start(brief, cwd, allowed_files, backend="subagent"|"agy", model="haiku"|"sonnet", checks=[…],
+`delegate_start(brief, cwd, allowed_files, backend="subagent"|"agy", model="haiku"|"sonnet"|"opus", checks=[…],
 commands=[…], protect=[…], outputs=[…], lend=[…])`. The server wraps the brief in the guard (scope, exact
 commands, stay on task, no code smuggled into files a command runs, report shape) — don't repeat those.
 
