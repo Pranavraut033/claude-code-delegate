@@ -6,7 +6,7 @@
 
 A Claude Code plugin that cuts a job into clusters and hands each one to the cheapest worker that will finish it — a Claude Code subagent on **Haiku**, **Sonnet** or **Opus** (creative work, asked once per session), or the **Antigravity CLI** (`agy`, Gemini) — then checks every change with a snapshot, a guard and your own machine checks.
 
-![version](https://img.shields.io/badge/version-0.8.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_Opus_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
+![version](https://img.shields.io/badge/version-0.10.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_Opus_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
 
 **📖 New here? Read [the journey](JOURNEY.md)** — why we built this, what broke, and what the benchmarks really showed.
 
@@ -77,6 +77,8 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 | Tool | Description |
 |---|---|
 | `delegate_start` | Snapshot and start a job in place in cwd. `backend="subagent"` (default) writes the guarded brief and returns `agent` fields for the Agent tool (`delegate:worker`, `model="haiku"`/`"sonnet"`/`"opus"`); `backend="agy"` launches agy. `checks=[…]` run after the worker; `commands=[…]` the exact command lines it may run; `protect=[…]` files the checks depend on; `outputs=[…]` files the commands generate; `lend=[…]` skills inlined into the brief. agy only: `mcp=[…]`, `handoff`, `network`, `timeout_s`. |
+| `delegate_scoreboard` | Per worker model, from every stored verdict: jobs, first-round pass and clean rate, rounds, time, tokens, average rating; `thin` under 5 jobs. Also written to `scoreboard.json`. |
+| `delegate_rate` | Opus or Fable orchestrator only: rate a job 1–5; updates the stored per-model average. |
 | `delegate_verdict` | One verdict for a finished round: state, tokens (by model), orchestrator calls, report, edits, denied, out of scope, unattributed, protected changed, a diff sample, each check (run now), `clean`. |
 | `delegate_status` | One job's progress: state, steps, edits, commands, denials, the worker's final report. With no job, lists recent jobs. |
 | `delegate_wait` | Block until a job finishes or stalls; returns its status. |
@@ -98,7 +100,7 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 
 ## 🪤 Gotchas from real use
 
-- **Parallel jobs need the same `commands` list.** The guard config is shared, so the most recently started job's list wins and another job's commands get refused. Give every job the union of all commands and disjoint `allowed_files`, or start them one at a time. Each verdict then reports `clean: false` because sibling edits show up in `out_of_scope`; judge by `edits`, `protected_changed`, `unattributed` and the checks.
+- **Parallel jobs need the same `commands` list.** The guard config is shared, so the most recently started job's list wins and another job's commands get refused. Give every job the union of all commands and disjoint `allowed_files`, or start them one at a time. Since 0.10 a file another overlapping job in the repo may edit is listed under `sibling`, not `out_of_scope`, so it no longer makes the verdict unclean (replayed over 200 stored verdicts: first-round clean 66 → 97).
 - **`lend` can't resolve `anthropic-skills:` names.** Pass the `SKILL.md` path instead: `find ~/.claude/skills/synced -name SKILL.md`.
 - **agy's headless shell runs Node 16.** Anything needing Node 20+ must be granted and briefed with an explicit `env PATH=...` prefix.
 - **`gemini-4-argon-medium` can think for over 5 minutes, write nothing and be marked stalled.** Resume with "write files early, keep thinking short".
@@ -113,7 +115,7 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 | **Haiku** subagent (default) | One fixed, already-decided pattern across files; migrations, renames, extraction — with a machine check | $0.10/$0.50 per M tokens up to a 100k prompt; draws on your Claude plan |
 | **Sonnet** subagent | Diagnosis, ambiguity, multi-step changes; a cluster Haiku failed | $2/$10 per M |
 | **Opus** subagent | Creative clusters: prose, copy, naming, content. Claude asks you once per session before using it | $4/$20 per M |
-| **agy** (`gemini-3.8-flash-medium`) | Long unattended runs, or when Claude's limit is nearly spent (Google quota pool) | not cheaper in Claude tokens (benchmarks below) |
+| **agy** (newest `gemini-4-hydrogen`, read from `agy models`) | Long unattended runs, or when Claude's limit is nearly spent (Google quota pool) | not cheaper in Claude tokens (benchmarks below) |
 | **Claude itself** | Anything under ~3 tool calls, or that would take more than ~5 orchestrator calls to brief and check; all visual judgment | — |
 
 Evidence and sources: [orchestration.md](skills/delegate/references/orchestration.md); agy model notes: [models.md](skills/delegate/references/models.md) and [agy.md](skills/delegate/references/agy.md).

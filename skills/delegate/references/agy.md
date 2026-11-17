@@ -14,7 +14,7 @@ Read this before any `delegate_start(backend="agy")`. Model-by-model notes, timi
 
 ## Running a job
 
-`delegate_start(…, backend="agy", model="gemini-3.8-flash-medium", checks=[…], outputs=[…], handoff=True,
+`delegate_start(…, backend="agy", model="hydrogen", checks=[…], outputs=[…], handoff=True,
 lend=[…], mcp=[…], timeout_s=3600, network=False)` launches agy and returns `wait_cmd` and `watch_cmd`.
 - **Hand-off (default):** give the user `watch_cmd` (a live view ending with each check, `clean` and the
   `git diff` command); run `wait_cmd` as a **background** Bash task; it wakes you once with the verdict. The
@@ -48,7 +48,12 @@ before starting.
 
 ## Models and quota
 
-- Flash (`gemini-3.8-flash-medium` / `-high`) for well-specified packages; Argon (`gemini-4-argon-medium`)
+- **Models are read from `agy models` at runtime.** `model` takes a slug or a family name (`"hydrogen"`,
+  `"flash"`, `"argon"`), which resolves to that family's newest version at medium; a slug agy dropped resolves
+  to the newest of its family and effort (`model_note` says so). Default: newest Hydrogen, else newest Flash.
+  `delegate_usage()` returns the current `models` list.
+- Hydrogen (`gemini-4-hydrogen-*`, Gemini 4's executor model, not yet measured here) or Flash
+  (`gemini-3.8-flash-medium` / `-high`) for well-specified packages; Argon (`gemini-4-argon-medium`)
   for research legwork or a package Flash failed — it used 5–10× the tokens per job and its weekly pool is small.
 - `delegate_usage()` (free, no model call): % left per pool (Gemini 5-hour and weekly, Argon weekly,
   Claude/GPT) and hours to each reset. Check it before Argon or a package longer than ~20 min.

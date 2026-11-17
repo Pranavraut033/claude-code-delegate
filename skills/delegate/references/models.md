@@ -92,6 +92,14 @@ measured:* Flash on a 30–60 min package; add the first such row to the timing 
 
 ---
 
+## gemini-4-hydrogen (low / medium / high / xhigh)
+
+**Official** (agy changelog 1.5.8, 1.5.10): added to `--model` in agy 1.5.8; agy's Orchestrator model plans
+with Gemini 4 Carbon (High) and hands execution to Gemini 4 Hydrogen (High), so Hydrogen is Gemini 4's
+executor tier. Quota pool not yet seen in `/usage`; assumed to draw on the Gemini pools.
+**Measured:** none yet. Default agy worker since v0.9.0; record the first jobs in the timing table.
+**Brief recipe:** as Flash until measured.
+
 ## gemini-4-argon (low / medium / high)
 
 **Official** (ai.google.dev latest-model, models/gemini-4-argon; antigravity.google models):
@@ -174,3 +182,5 @@ Don't spend it on packages Flash can do — the weekly quota is limited.
 - 2026-10-21: v0.6.2 — guard hook bug from real use: Claude Code strips a leading `cd <session folder> &&` before PreToolUse hooks see a Bash command (2.1.306), so 0.6.1's `cd <cwd> && <cmd>` list never matched and workers were denied every command. The hook now compares commands without their leading cd (a bare one only when the shell is in the job's folder) and parses reads with shlex (quoted `\|`, `;`-joined reads pass; redirects, `$(…)` and non-read commands still fail).
 - 2026-10-22: v0.7.0 — owner dropped the permission gate for Claude subagent workers: no PreToolUse hook, no guard.json. Workers run under the session's permissions; the verdict still reports out_of_scope, unattributed and protected_changed (hashes), and any of them makes `clean` false.
 - 2026-11-16: v0.8.0 — Opus subagent workers for creative clusters (prose, copy, naming, content); the skill asks the user once per session before the first Opus dispatch. The server rejects subagent models other than haiku/sonnet/opus.
+- 2026-11-17: v0.9.0 — agy models are read from `agy models` at runtime; `model` accepts a family name (newest version, medium) and a dropped slug resolves to the newest of its family. Default agy worker: newest Hydrogen, else Flash. Added gemini-4-hydrogen (unmeasured).
+- 2026-11-17: v0.10.0 — `delegate_scoreboard` (per-model record from stored verdicts; 236 verdicts at launch) and `delegate_rate` (1–5 quality rating, Opus/Fable orchestrators only). At launch, first-round pass: Argon-medium 0.94 (32 jobs), Flash-high 0.90 (10), Haiku 0.85 (20), Sonnet 0.79 (125); Hydrogen 4 jobs, too thin. Verdicts now list files an overlapping job in the repo owns under `sibling` instead of `out_of_scope` (104 of 116 out-of-scope verdicts had a sibling job; replayed: first-round clean 66 → 97 of 200).

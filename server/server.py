@@ -28,7 +28,8 @@ SETTINGS = Path.home() / ".gemini/antigravity-cli/settings.json"
 AGY_MCP = Path.home() / ".gemini/config/mcp_config.json"  # agy's global MCP list (CLI, app and IDE share it)
 CLAUDE_JSON = Path.home() / ".claude.json"
 DEFAULT_LEND = ("ponytail",)  # skills every job borrows unless the caller passes lend=[]
-DEFAULT_MODEL = "gemini-3.8-flash-medium"
+DEFAULT_FAMILIES = ("hydrogen", "flash")  # agy default worker: newest of the first family `agy models` lists
+_MODELS = []  # `agy models` slugs, read once per server process
 WRITE_TOOLS = {"replace_file_content", "multi_replace_file_content", "write_to_file", "sed_file",
                "notebook_edit"}
 LOW_PCT = 20  # delegate_start flags a pool below this
@@ -556,7 +557,9 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
     the worker's completion notice arrives. The worker runs under the session's own permissions. `commands`:
     the exact command lines the brief needs (the checks are added); `protect`: files the checks depend on, which
     the worker is told not to edit and whose hashes go in the verdict (`protected_changed`). backend="agy": the
-    Antigravity CLI does the work (model default gemini-3.8-flash-medium; the agy-only parameters below apply).
+    Antigravity CLI does the work (model: an `agy models` slug or a family name such as "flash", "hydrogen" or "argon" for its newest version;
+    default the newest Hydrogen, else Flash; a slug agy dropped resolves to the newest of its family; the
+    agy-only parameters below apply).
     `brief` says the
     exact change, what done means, and which checks to run. `allowed_files` are the only
     paths agy may edit (absolute, or relative to cwd; a directory or a glob also works).
@@ -577,7 +580,12 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
     cwd = os.path.realpath(os.path.expanduser(cwd))
     if backend not in ("subagent", "agy"):
         return {"error": f"backend must be 'subagent' or 'agy', not {backend!r}"}
-    model = model or (DEFAULT_MODEL if backend == "agy" else "haiku")
+    note = None
+    if backend == "agy":
+        model, note = _resolve_model(model, _agy_models())
+        if not model:
+            return {"error": note}
+    model = model or "haiku"
     if backend == "subagent" and model not in ("haiku", "sonnet", "opus"):
         return {"error": f"subagent model must be 'haiku', 'sonnet' or 'opus', not {model!r}"}
     if not os.path.isdir(cwd):
@@ -615,6 +623,8 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
         PROCS.pop(m["id"]).stdin.close()
     out = {"job": m["id"], "git": bool(top), "wait_cmd": _wait_cmd(m["id"]),
            "watch_cmd": _wait_cmd(m["id"]).replace(" wait ", " watch ")}
+    if note:
+        out["model_note"] = note
     if not top:
         out["warning"] = "not a git repo: delegate_diff and delegate_discard cannot work for this job"
     own = _repo_agy_config(top or cwd)
@@ -678,6 +688,8 @@ def _verdict(job):
     v["report"] = (st.get("report") or "")[:2500] or None
     if m.get("top"):
         d = delegate_diff(job, max_chars=0)
+        if d["sibling"]:  # another job's files, edited during this run: not this worker's scope problem
+            v["sibling"] = d["sibling"]
         v.update(out_of_scope=d["out_of_scope"], not_from_agy_edits=d["not_from_agy_edits"],
                  stat=d["stat"].strip().splitlines()[-1:] or ["no changes"])
         # changed inside the package without an agy edit step: another session, or agy running code it
@@ -685,7 +697,7 @@ def _verdict(job):
         # declared outputs are expected to change without an edit step (Ep 3: every generator job read unclean)
         v["unattributed"] = [f for f in d["not_from_agy_edits"]
                              if _allowed(m, _abs(m, f)) and not _allowed(m, _abs(m, f), "outputs")]
-        changed = [f for f in d["changed"] if f not in d["out_of_scope"] and not _allowed(m, _abs(m, f), "outputs")]
+        changed = [f for f in d["changed"] if f not in d["out_of_scope"] and f not in d["sibling"] and not _allowed(m, _abs(m, f), "outputs")]
         if changed:  # light quality check for free: one changed file, capped
             pick = changed[len(changed) // 2]  # ponytail: middle file, not random; the first is often trivial
             v["sample"] = {"file": pick, "diff": delegate_diff(job, files=[pick], max_chars=1500)["diff"]}
@@ -753,6 +765,43 @@ def _parse_usage(text):
     return pools
 
 
+def _agy_models():
+    """Slugs `agy models` lists now; [] if agy can't answer. ponytail: cached per server process, a restart
+    (or a new Claude session) picks up models agy added or removed."""
+    if not _MODELS:
+        try:
+            r = subprocess.run([AGY, "models"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+            _MODELS.extend(l.split("\t")[0].strip() for l in r.stdout.splitlines() if "\t" in l)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return _MODELS
+
+
+def _gem(slug):
+    """gemini-<version>-<family>-<effort> -> (family, version tuple, effort), else None."""
+    m = re.fullmatch(r"gemini-([\d.]+)-([a-z]+)-(low|medium|high|xhigh)", slug)
+    return m and (m[2], tuple(int(x) for x in m[1].split(".")), m[3])
+
+
+def _resolve_model(model, avail):
+    """Pick the agy slug to run. None -> newest model of the first DEFAULT_FAMILIES family available, medium.
+    A family name ("flash", "argon", "hydrogen") -> newest of it, medium. A slug agy no longer lists -> newest
+    of the same family and effort. Returns (slug, note) or (None, error). No list from agy -> as given."""
+    if not avail:
+        return model or "gemini-3.8-flash-medium", None
+    if model in avail:
+        return model, None
+    g = _gem(model) if model else None
+    fams = [g[0]] if g else [model] if model else list(DEFAULT_FAMILIES)
+    effort = g[2] if g else "medium"
+    for fam in fams:
+        hits = sorted((_gem(a)[1], a) for a in avail if _gem(a) and _gem(a)[0] == fam and _gem(a)[2] == effort)
+        if hits:
+            pick = hits[-1][1]
+            return pick, (f"{model} is not in `agy models`; using {pick}" if g else None)
+    return None, f"no agy model matches {model!r}; `agy models` lists: {', '.join(avail)}"
+
+
 def _usage_pools(model):
     """Quota pools a model draws from. Argon has its own weekly pool; ponytail: assume it
     also draws on the shared Gemini pools until /usage shows otherwise."""
@@ -764,18 +813,78 @@ def _usage_pools(model):
             or (fam == "claude" and "claude" in p["pool"].lower())]
 
 
+RATERS = ("opus", "fable")  # orchestrator models whose quality ratings count
+
+
+@mcp.tool()
+def delegate_rate(job: str, score: int, rater: str, note: str = "") -> dict:
+    """Rate a finished job's work 1-5 (1 unusable, 2 needed heavy fixing, 3 usable with fixes, 4 good, 5 nothing to
+    change). Only an Opus or Fable orchestrator rates: `rater` is your exact model id, others are refused. Rate
+    what you actually read (the sample, or the full audit). Re-rating replaces the score. Send it alongside your
+    next call, not as a call of its own. Updates the stored scoreboard (per-model average)."""
+    if not any(r in rater.lower() for r in RATERS):
+        return {"error": f"only an Opus or Fable orchestrator rates; {rater!r} is not one"}
+    if score not in range(1, 6):
+        return {"error": "score is 1-5"}
+    m = _load(job)
+    m["rating"] = {"score": score, "rater": rater, "note": note[:300], "at": time.time()}
+    _save(m)
+    row = next(r for r in delegate_scoreboard()["models"] if r["model"] == m["model"])
+    return {"job": job, "model": m["model"], "rating": score, "avg_rating": row["avg_rating"], "rated": row["rated"]}
+
+
+@mcp.tool()
+def delegate_scoreboard(min_jobs: int = 1) -> dict:
+    """Per-worker-model record from every stored job: jobs, first_round_clean (share of jobs clean on round 1;
+    strict, parallel jobs make each other unclean), first_round_pass (round 1 checks passed and no task failed,
+    skipped or blocked: the fairer quality signal), avg_rounds, avg_elapsed_s, avg_tokens, avg_rating and rated (Opus/Fable ratings). Under 5 jobs a row is
+    noise: `thin` says so. Written to scoreboard.json beside the jobs. Use it when tiering (SKILL.md §1)."""
+    by = {}
+    for mp in JOBS.glob("*/meta.json"):
+        try:
+            m = json.loads(mp.read_text())
+            vs = sorted(mp.parent.glob("verdict-r*.json"), key=lambda f: int(f.stem.split("-r")[1]))
+            vs = [json.loads(f.read_text()) for f in vs]
+        except (json.JSONDecodeError, ValueError, OSError):
+            continue
+        if not vs:
+            continue
+        b = by.setdefault((m.get("backend") or "agy", m.get("model")), {"jobs": 0, "clean1": 0, "pass1": 0, "rounds": 0,
+                                                                         "secs": [], "toks": [], "rates": []})
+        b["jobs"] += 1
+        b["clean1"] += bool(vs[0].get("clean"))
+        b["pass1"] += vs[0].get("all_checks_pass") is not False and not vs[0].get("not_done")
+        b["rounds"] += len(vs)
+        b["secs"] += [v["elapsed_s"] for v in vs if isinstance(v.get("elapsed_s"), (int, float))]
+        b["toks"] += [v["tokens"] for v in vs if isinstance(v.get("tokens"), (int, float))]
+        if m.get("rating"):
+            b["rates"].append(m["rating"]["score"])
+    avg = lambda xs, nd=0: round(sum(xs) / len(xs), nd) if xs else None
+    rows = [{"backend": k[0], "model": k[1], "jobs": b["jobs"], "first_round_clean": round(b["clean1"] / b["jobs"], 2),
+             "first_round_pass": round(b["pass1"] / b["jobs"], 2),
+             "avg_rounds": round(b["rounds"] / b["jobs"], 2), "avg_elapsed_s": avg(b["secs"]),
+             "avg_tokens": avg(b["toks"]), "avg_rating": avg(b["rates"], 2), "rated": len(b["rates"]),
+             "thin": b["jobs"] < 5} for k, b in by.items() if b["jobs"] >= min_jobs]
+    rows.sort(key=lambda r: -r["jobs"])
+    out = {"models": rows, "updated": time.time()}
+    if JOBS.exists():
+        (JOBS.parent / "scoreboard.json").write_text(json.dumps(out, indent=1))
+    return out
+
+
 @mcp.tool()
 def delegate_usage() -> dict:
     """agy backend only. agy's remaining plan quota per pool (Gemini, Gemini 4 Argon, Claude/GPT) for the
     5-hour and weekly windows, with hours until each resets. Free: `/usage` is answered by
-    the CLI, no model call. Check before choosing Argon or starting a long package."""
+    the CLI, no model call. Check before choosing Argon or starting a long package. `models`: the slugs
+    `agy models` lists now (delegate_start also takes a family name and resolves it to the newest)."""
     try:
         r = subprocess.run([AGY, "-p", "/usage"], stdin=subprocess.DEVNULL, capture_output=True,
                            text=True, timeout=60)
         pools = _parse_usage(r.stdout)
     except (OSError, subprocess.TimeoutExpired, ValueError) as e:
         return {"error": str(e)}
-    return {"pools": pools} if pools else {"error": (r.stderr or r.stdout)[-500:]}
+    return {"pools": pools, "models": _agy_models()} if pools else {"error": (r.stderr or r.stdout)[-500:]}
 
 
 def _rel(m, p):
@@ -890,10 +999,24 @@ async def delegate_wait(job: str, timeout_s: int = 90) -> dict:
     return delegate_status(job)
 
 
+def _siblings(m):
+    """Other jobs in the same repo whose run overlapped this one (created before now, last saved after this job
+    started). ponytail: meta.json mtime as the end of a job; a job resumed hours later counts again."""
+    out = []
+    for mp in JOBS.glob("*/meta.json"):
+        try:
+            o = json.loads(mp.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if o["id"] != m["id"] and o.get("top") == m["top"] and mp.stat().st_mtime >= m.get("created", 0):
+            out.append(o)
+    return out
+
+
 @mcp.tool()
 def delegate_diff(job: str, files: list[str] | None = None, max_chars: int = 6000) -> dict:
     """Audit: files changed since the job's snapshot (relative paths), which are outside
-    allowed_files, which changed without an agy edit step (another session, or agy via a
+    allowed_files (`out_of_scope`; files another overlapping job in the repo may edit go to `sibling`, file -> job), which changed without an agy edit step (another session, or agy via a
     shell command), denied actions, the --stat, and the unified diff truncated to max_chars.
     Read `stat` first, then pass `files` to diff only the ones worth reading."""
     m = _load(job)
@@ -906,8 +1029,12 @@ def delegate_diff(job: str, files: list[str] | None = None, max_chars: int = 600
                _git(top, "diff", "--name-only", m["base"], now).decode().splitlines()]
     paths = ["--", *[os.path.relpath(_abs(m, f), top) for f in files]] if files else []
     diff = _git(top, "diff", m["base"], now, *paths).decode(errors="replace")
+    outside = [f for f in changed if not (_allowed(m, f) or _allowed(m, f, "outputs"))]
+    sibs = _siblings(m) if outside else []
+    sib = {f: o["id"] for f in outside for o in sibs if _allowed(o, f) or _allowed(o, f, "outputs")}
     return {"changed": [_rel(m, f) for f in changed],
-            "out_of_scope": [_rel(m, f) for f in changed if not (_allowed(m, f) or _allowed(m, f, "outputs"))],
+            "out_of_scope": [_rel(m, f) for f in outside if f not in sib],
+            "sibling": {_rel(m, f): j for f, j in sib.items()},
             "not_from_agy_edits": [_rel(m, f) for f in changed if f not in edits],
             "commands": [c[:120] for c in commands], "denied": denied,
             "stat": _git(top, "diff", "--stat", m["base"], now).decode(),
@@ -1089,6 +1216,11 @@ def selftest():
         assert delegate_diff("t")["out_of_scope"] == ["new.py"]
         assert "never edit them" in _guard(m, "b") and str(repo / "keep.txt") in _guard(m, "b")
         m.pop("outputs"); _save(m)
+        sib = {"id": "s", "top": str(repo), "allowed": [str(repo / "new.py")]}  # overlapping job owns new.py
+        (JOBS / "s").mkdir(); (JOBS / "s/meta.json").write_text(json.dumps(sib))
+        dd = delegate_diff("t")
+        assert dd["out_of_scope"] == ["keep.txt"] and dd["sibling"] == {"new.py": "s"}, dd
+        shutil.rmtree(JOBS / "s")
         rep = "Rendering X (10%)...\n1. done — plan\n" + "Rendering X (90%)...\n" * 50 + \
               f"1. done — check: pass — ok\nFiles: {repo}/a.py"
         assert _report(m, rep) == "1. done — check: pass — ok\nFiles: a.py", _report(m, rep)
@@ -1226,7 +1358,37 @@ def selftest():
     assert c == {"grep -n x f": True, "grep x f | awk '{print}'": False, "npm run lint": True,
                  "npm run test": False, "python3 b.py --only=g07": False, "python3 b.py --only=g": True}, c
     _selftest_subagent()
+    _selftest_scoreboard()
+    av = ["gemini-4-argon-medium", "gemini-3.8-flash-medium", "gemini-4.1-flash-medium", "gemini-4.1-flash-high"]
+    assert _resolve_model(None, av) == ("gemini-4.1-flash-medium", None)  # no hydrogen -> newest flash
+    assert _resolve_model("argon", av) == ("gemini-4-argon-medium", None)
+    assert _resolve_model("gemini-3.8-flash-medium", av) == ("gemini-3.8-flash-medium", None)
+    assert _resolve_model("gemini-3.9-flash-high", av)[0] == "gemini-4.1-flash-high"  # dropped slug -> newest
+    assert _resolve_model("carbon", av)[0] is None and _resolve_model("x", [])[0] == "x"
     print("selftest ok")
+
+
+def _selftest_scoreboard():
+    global JOBS
+    saved = JOBS
+    with tempfile.TemporaryDirectory() as d:
+        JOBS = Path(d) / "jobs"
+        for jid, model, cleans in [("a", "haiku", [False, True]), ("b", "haiku", [True]), ("c", "opus", [True])]:
+            (JOBS / jid).mkdir(parents=True)
+            (JOBS / jid / "meta.json").write_text(json.dumps({"id": jid, "backend": "subagent", "model": model}))
+            for i, c in enumerate(cleans, 1):
+                (JOBS / jid / f"verdict-r{i}.json").write_text(json.dumps({"clean": c, "elapsed_s": 10, "tokens": 100}))
+        try:
+            assert "error" in delegate_rate("a", 4, "claude-sonnet-5-5")
+            assert "error" in delegate_rate("a", 9, "claude-opus-5-5")
+            assert delegate_rate("a", 4, "claude-opus-5-5")["avg_rating"] == 4
+            r = delegate_rate("b", 2, "claude-fable-5-2")
+            assert r["avg_rating"] == 3 and r["rated"] == 2, r
+            h = next(x for x in delegate_scoreboard()["models"] if x["model"] == "haiku")
+            assert h["jobs"] == 2 and h["first_round_clean"] == 0.5 and h["first_round_pass"] == 1 and h["avg_rounds"] == 1.5 and h["thin"], h
+            assert json.loads((Path(d) / "scoreboard.json").read_text())["models"]
+        finally:
+            JOBS = saved
 
 
 def _selftest_subagent():

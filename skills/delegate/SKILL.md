@@ -58,6 +58,9 @@ planning. Explore unfamiliar code with an Explore subagent, not by reading it al
   non-obvious reason; unsure → `sonnet`. `agy` per `references/agy.md` (Google quota, long unattended runs).
   `opus` = creative work where quality of voice and invention is the deliverable: prose, copy, naming
   candidates, story/game/world content, original design writing. Not for code that Sonnet can do.
+- **Check the record:** `delegate_scoreboard()` gives per model `first_round_pass`, `avg_rounds`, time, tokens
+  and `avg_rating`. Where a row is not `thin` (5+ jobs), let it overrule the rules above: a cheap model that
+  passes the tier's kind of work goes first, one that keeps failing gets skipped.
 - **Opus consent, once per session.** The first time a plan has an `opus` cluster, ask the user with
   AskUserQuestion ("Use Opus workers for creative clusters this session?" — Yes / No, use Sonnet), before any
   dispatch. Their answer stands for the rest of the session: never ask again, even for later jobs. On no,
@@ -118,12 +121,16 @@ started (the desktop app once ran a declined call [ours]); cancel any job from t
 
 `delegate_verdict(job)` runs the checks once and returns: `state`, `tokens` (and `tokens_by_model`),
 `orchestrator_calls`, `report` (the worker's per-task block), `edits`, `denied`, `out_of_scope`, `unattributed`,
-`protected_changed`, `stat`, `sample` (one changed file's diff, ≤1,500 chars), each check, `all_checks_pass`,
+`protected_changed`, `sibling` (files an overlapping job in the repo owns; not this worker's scope problem), `stat`, `sample` (one changed file's diff, ≤1,500 chars), each check, `all_checks_pass`,
 `clean`. Report in ≤3 lines: **done or not** (state, clean, checks, scope, denials) and **quality at a glance**
 from `sample`. Then stop reading unless:
 - `protected_changed` or `unattributed` is non-empty → say so, read one of those files;
 - `denied` is non-empty → the worker hit the guard; decide whether the brief missed a command;
 - a check failed → §5.
+
+**Rate it, if you are Opus or Fable.** `delegate_rate(job, score 1-5, rater="<your exact model id>", note)` on
+what you read: 1 unusable, 2 heavy fixing, 3 usable with fixes, 4 good, 5 nothing to change. Send it in the same
+message as your next call, never as a call of its own. Other models skip this; the server refuses them anyway.
 
 **Full audit only on request**, or for factual, user-facing or security-relevant work, and always a short
 consistency read across clusters when there was more than one: read `stat`, then `delegate_diff(job, files=[…])`
