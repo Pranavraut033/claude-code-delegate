@@ -124,7 +124,9 @@ started (the desktop app once ran a declined call [ours]); cancel any job from t
 `protected_changed`, `sibling` (files an overlapping job in the repo owns; not this worker's scope problem), `stat`, `sample` (one changed file's diff, ≤1,500 chars), each check, `all_checks_pass`,
 `clean`. Report in ≤3 lines: **done or not** (state, clean, checks, scope, denials) and **quality at a glance**
 from `sample`. Then stop reading unless:
-- `protected_changed` or `unattributed` is non-empty → say so, read one of those files;
+- `protected_changed` or `unattributed` is non-empty → say so, read one of those files. Before blaming the worker,
+  check its `edits`: in the stored history every protected change came from a parallel job or a checker edited
+  in this session mid-run. So don't edit a running job's protected files or checks yourself;
 - `denied` is non-empty → the worker hit the guard; decide whether the brief missed a command;
 - a check failed → §5.
 

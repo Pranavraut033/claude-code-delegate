@@ -592,6 +592,9 @@ def delegate_start(brief: str, cwd: str, allowed_files: list[str], backend: str 
         return {"error": f"cwd {cwd} is not a directory"}
     if not allowed_files:
         return {"error": "allowed_files is empty: name the files agy may edit"}
+    if backend == "agy" and checks is None:  # 9 of 32 Argon jobs ran with none: the verdict then can't judge
+        return {"error": "agy jobs need checks=[…] (shell commands the verdict runs); pass checks=[] only for "
+                         "work no command can check, such as research"}
     allowed = [a if os.path.isabs(a) else os.path.join(cwd, a) for a in allowed_files]
     top = _toplevel(cwd)
     m = {"id": time.strftime("%m%d-%H%M%S-") + uuid.uuid4().hex[:4], "cwd": cwd,
@@ -704,7 +707,13 @@ def _verdict(job):
     # run the checks on every finished round: agy can finish its work and then get a 503 (status
     # ERROR), and the checks, not agy's status, decide whether the work is good
     if m.get("protect_hash"):  # a worker that edits what the checks read can make them pass (benchmark 5)
-        v["protected_changed"] = [_rel(m, p) for p, h in m["protect_hash"].items() if _hash(p) != h]
+        hit = [p for p, h in m["protect_hash"].items() if _hash(p) != h]
+        sibs = _siblings(m) if hit and m.get("top") else []
+        for p in hit:  # 2 of 6 historical protected_changed were a parallel job's own file
+            o = next((o for o in sibs if _allowed(o, p) or _allowed(o, p, "outputs")), None)
+            if o:
+                v.setdefault("sibling", {})[_rel(m, p)] = o["id"]
+        v["protected_changed"] = [_rel(m, p) for p in hit if _rel(m, p) not in v.get("sibling", {})]
     if m.get("backend") == "subagent":
         v["tokens_by_model"] = st.get("tokens_by_model")
         v["orchestrator_calls"] = _orchestrator_calls(m)
@@ -1449,6 +1458,12 @@ def _selftest_subagent():
             assert v["not_done"] == [], v
             (repo / "test_a.py").write_text("assert 1\n")
             assert delegate_verdict(job)["protected_changed"] == ["test_a.py"]
+            (JOBS / "sib").mkdir(); (JOBS / "sib/meta.json").write_text(json.dumps(
+                {"id": "sib", "top": str(repo), "allowed": [os.path.realpath(repo / "test_a.py")]}))
+            v = delegate_verdict(job)  # a parallel job owns test_a.py: sibling, not protected_changed
+            assert v["protected_changed"] == [] and v["sibling"] == {"test_a.py": "sib"}, v
+            shutil.rmtree(JOBS / "sib")
+            assert "checks" in delegate_start("x", str(repo), ["a.py"], backend="agy", lend=[])["error"]
             r2 = delegate_resume(job, "Fix it.")
             m2 = _load(job); m2["rounds"][-1]["started"] = (now + timedelta(seconds=10)).timestamp(); _save(m2)
             assert r2["round"] == 2 and delegate_status(job)["state"] == "running", r2  # round 1's handback is old

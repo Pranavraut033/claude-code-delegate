@@ -14,7 +14,7 @@ Read this before any `delegate_start(backend="agy")`. Model-by-model notes, timi
 
 ## Running a job
 
-`delegate_start(…, backend="agy", model="hydrogen", checks=[…], outputs=[…], handoff=True,
+`delegate_start(…, backend="agy", model="hydrogen", checks=[…] (required; `[]` only for research no command can check), outputs=[…], handoff=True,
 lend=[…], mcp=[…], timeout_s=3600, network=False)` launches agy and returns `wait_cmd` and `watch_cmd`.
 - **Hand-off (default):** give the user `watch_cmd` (a live view ending with each check, `clean` and the
   `git diff` command); run `wait_cmd` as a **background** Bash task; it wakes you once with the verdict. The

@@ -6,7 +6,7 @@
 
 A Claude Code plugin that cuts a job into clusters and hands each one to the cheapest worker that will finish it — a Claude Code subagent on **Haiku**, **Sonnet** or **Opus** (creative work, asked once per session), or the **Antigravity CLI** (`agy`, Gemini) — then checks every change with a snapshot, a guard and your own machine checks.
 
-![version](https://img.shields.io/badge/version-0.10.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_Opus_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
+![version](https://img.shields.io/badge/version-0.11.0-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=anthropic&logoColor=white) ![workers](https://img.shields.io/badge/workers-Haiku_·_Sonnet_·_Opus_·_agy-4285F4) ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2) ![python](https://img.shields.io/badge/python-3.10%2B_·_uv-3776AB?logo=python&logoColor=white) ![platform](https://img.shields.io/badge/tested_on-macOS-lightgrey?logo=apple)
 
 **📖 New here? Read [the journey](JOURNEY.md)** — why we built this, what broke, and what the benchmarks really showed.
 
@@ -76,7 +76,7 @@ uv run --script ~/.claude/plugins/cache/delegate/delegate/<version>/server/serve
 
 | Tool | Description |
 |---|---|
-| `delegate_start` | Snapshot and start a job in place in cwd. `backend="subagent"` (default) writes the guarded brief and returns `agent` fields for the Agent tool (`delegate:worker`, `model="haiku"`/`"sonnet"`/`"opus"`); `backend="agy"` launches agy. `checks=[…]` run after the worker; `commands=[…]` the exact command lines it may run; `protect=[…]` files the checks depend on; `outputs=[…]` files the commands generate; `lend=[…]` skills inlined into the brief. agy only: `mcp=[…]`, `handoff`, `network`, `timeout_s`. |
+| `delegate_start` | Snapshot and start a job in place in cwd. `backend="subagent"` (default) writes the guarded brief and returns `agent` fields for the Agent tool (`delegate:worker`, `model="haiku"`/`"sonnet"`/`"opus"`); `backend="agy"` launches agy. `checks=[…]` run after the worker (required for agy; `[]` opts out); `commands=[…]` the exact command lines it may run; `protect=[…]` files the checks depend on; `outputs=[…]` files the commands generate; `lend=[…]` skills inlined into the brief. agy only: `mcp=[…]`, `handoff`, `network`, `timeout_s`. |
 | `delegate_scoreboard` | Per worker model, from every stored verdict: jobs, first-round pass and clean rate, rounds, time, tokens, average rating; `thin` under 5 jobs. Also written to `scoreboard.json`. |
 | `delegate_rate` | Opus or Fable orchestrator only: rate a job 1–5; updates the stored per-model average. |
 | `delegate_verdict` | One verdict for a finished round: state, tokens (by model), orchestrator calls, report, edits, denied, out of scope, unattributed, protected changed, a diff sample, each check (run now), `clean`. |
